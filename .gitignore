@@ -1,0 +1,12 @@
+/blib/
+/Makefile
+/Makefile.old
+/MYMETA.*
+/pm_to_blib
+*.o
+*.bs
+Impersonate.c
+.tmp/
+/Curl-Impersonate-*.tar.gz
+/META.yml
+/META.json

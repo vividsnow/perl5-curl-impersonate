@@ -1,0 +1,46 @@
+name: ci
+on: [push, pull_request]
+
+# Builds the XS against Alien::curlimpersonate, which compiles
+# libcurl-impersonate (and BoringSSL, zlib, zstd, brotli, nghttp2/3, ngtcp2)
+# from source -- that is what makes this job slow. The apt list is what that
+# build needs: cmake and ninja for the superbuild, go for BoringSSL, patch for
+# the vendored sources, curl and make for the libidn2 prestep.
+#
+# The suite itself is hermetic: t/60-63 drive a local 127.0.0.1 server, and the
+# two tests that need the real internet already self-skip unless CI_LIVE=1.
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cpanminus git ninja-build cmake pkg-config ca-certificates \
+            curl golang-go patch bzip2 xz-utils unzip build-essential
+
+      - name: cpan deps
+        run: |
+          # cpanm cannot write to the runner's perl, so it silently falls back
+          # to ~/perl5 -- which is NOT in the default @INC. Put it on PERL5LIB
+          # for this step and, via $GITHUB_ENV, for every later step, or the
+          # build cannot find what was just "successfully installed".
+          export PERL5LIB="$HOME/perl5/lib/perl5${PERL5LIB:+:$PERL5LIB}"
+          echo "PERL5LIB=$PERL5LIB" >> "$GITHUB_ENV"
+          # Makefile.PL loads both of these to compute cflags/libs, so
+          # --installdeps cannot bootstrap them -- it has to run Makefile.PL
+          # first. Installing the Alien here is also what takes the time.
+          cpanm --notest Alien::Base::Wrapper 'Alien::curlimpersonate~>=0.02'
+          cpanm --notest --installdeps .
+
+      - name: build
+        run: |
+          perl Makefile.PL
+          make
+
+      - name: test
+        run: make test
